@@ -19,7 +19,6 @@ Der Pflanzenwächter misst Bodenfeuchtigkeit, Temperatur und Lichtintensität. �
 | Mikrocontroller        | ESP32                                |
 | Bodenfeuchtesensor     | Kapazitiv                             |
 | Temperatursensor       | DHT22                                |
-| Pumpe + Relaismodul    | 5V Mini-Pumpe + 1-Kanal Relais       |
 | Versorgung             | 5V via USB oder Akku                 |
 | Platine                | Eigenes PCB, mit KiCad designt      |
 
@@ -28,9 +27,10 @@ Der Pflanzenwächter misst Bodenfeuchtigkeit, Temperatur und Lichtintensität. �
 ## 🏗️ Systemarchitektur
 
 ### Systemübersicht Diagramm
-📊 **[Diagramm in draw.io öffnen](https://app.diagrams.net/#Uhttps%3A%2F%2Fraw.githubusercontent.com%2Fderguer%2FHardware-Design%2Fmain%2FHardware-Design.drawio)**
 
-[![Systemarchitektur](https://via.placeholder.com/800x400/f0f0f0/333?text=Hardware-Design+Diagramm%0AKlicken+zum+Öffnen)](https://app.diagrams.net/#Uhttps%3A%2F%2Fraw.githubusercontent.com%2Fderguer%2FHardware-Design%2Fmain%2FHardware-Design.drawio)
+![Hardware-Design Systemarchitektur](images/Hardware-Design%20(1).png)
+
+🔧 **[Diagramm bearbeiten in draw.io](https://app.diagrams.net/#Uhttps%3A%2F%2Fraw.githubusercontent.com%2Fderguer%2FHardware-Design%2Fmain%2FHardware-Design.drawio)**
 
 Das `Hardware-Design.drawio` Diagramm zeigt die **Systemarchitektur des Wächters** aufgeteilt in die Hauptkomponenten:
 - Sensorik (Bodenfeuchtigkeit, Temperatur, Licht)
