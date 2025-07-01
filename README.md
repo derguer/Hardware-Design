@@ -25,6 +25,21 @@ Der Pflanzenwächter misst Bodenfeuchtigkeit, Temperatur und Lichtintensität. �
 
 ---
 
+## 🏗️ Systemarchitektur
+
+### Systemübersicht Diagramm
+![Systemübersicht](Hardware-Design.drawio)
+
+Das `Hardware-Design.drawio` Diagramm zeigt die **Systemarchitektur des Wächters** aufgeteilt in die Hauptkomponenten:
+- Sensorik (Bodenfeuchtigkeit, Temperatur, Licht)
+- Mikrocontroller (ESP32) als zentrale Steuereinheit
+- Aktorik (Pumpe, LEDs)
+- Kommunikationsschnittstellen
+
+📝 **Hinweis:** Die .drawio Datei kann mit [draw.io](https://app.diagrams.net/) geöffnet und bearbeitet werden.
+
+---
+
 ## 🔧 Schaltung & PCB Design
 
 ### Schaltplan
