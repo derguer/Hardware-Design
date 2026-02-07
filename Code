@@ -1,7 +1,7 @@
 #include <msp430.h>
 #include <stdint.h>
 
-// ==================== Pin Definitionen ====================
+// ==================== Pins ====================
 
 #define SDA BIT2
 #define SCL BIT3
@@ -19,25 +19,23 @@
 #define OLED_ADDR    0x3C
 #define TMP1075_ADDR 0x48
 #define FDC1004_ADDR 0x50
-#define OPT3001_ADDR 0x44  // ADDR = GND
+#define OPT3001_ADDR 0x44
 
-// ==================== OPT3001 Register ====================
+// ==================== Kalibrierung ====================
 
-#define OPT3001_REG_RESULT   0x00
-#define OPT3001_REG_CONFIG   0x01
-#define OPT3001_REG_MANU_ID  0x7E
-#define OPT3001_REG_DEV_ID   0x7F
-
-// ==================== Kalibrierung Feuchtigkeit ====================
-
-#define CAP_DRY   -4558
+#define CAP_DRY   -4500
 #define CAP_WET   -1
 #define RH_DRY    25
 #define RH_WET    85
-
-// ==================== Glättung ====================
-
 #define AVG_SAMPLES 8
+
+// ==================== Grenzwerte ====================
+
+#define TEMP_MIN  15
+#define TEMP_MAX  30
+#define HUM_MIN   30
+#define HUM_MAX   70
+#define LUX_MIN   300
 
 // ==================== Font 5x7 ====================
 
@@ -101,543 +99,381 @@ const uint8_t font[][5] = {
     {0x63, 0x14, 0x08, 0x14, 0x63}, // X
     {0x07, 0x08, 0x70, 0x08, 0x07}, // Y
     {0x61, 0x51, 0x49, 0x45, 0x43}, // Z
-    {0x00, 0x00, 0x00, 0x00, 0x00}, // [
-    {0x00, 0x00, 0x00, 0x00, 0x00}, // backslash
-    {0x00, 0x00, 0x00, 0x00, 0x00}, // ]
-    {0x00, 0x00, 0x00, 0x00, 0x00}, // ^
-    {0x00, 0x00, 0x00, 0x00, 0x00}, // _
-    {0x00, 0x00, 0x00, 0x00, 0x00}, // `
-    {0x20, 0x54, 0x54, 0x54, 0x78}, // a
-    {0x7F, 0x48, 0x44, 0x44, 0x38}, // b
-    {0x38, 0x44, 0x44, 0x44, 0x20}, // c
-    {0x38, 0x44, 0x44, 0x48, 0x7F}, // d
-    {0x38, 0x54, 0x54, 0x54, 0x18}, // e
-    {0x08, 0x7E, 0x09, 0x01, 0x02}, // f
-    {0x0C, 0x52, 0x52, 0x52, 0x3E}, // g
-    {0x7F, 0x08, 0x04, 0x04, 0x78}, // h
-    {0x00, 0x44, 0x7D, 0x40, 0x00}, // i
-    {0x20, 0x40, 0x44, 0x3D, 0x00}, // j
-    {0x7F, 0x10, 0x28, 0x44, 0x00}, // k
-    {0x00, 0x41, 0x7F, 0x40, 0x00}, // l
-    {0x7C, 0x04, 0x18, 0x04, 0x78}, // m
-    {0x7C, 0x08, 0x04, 0x04, 0x78}, // n
-    {0x38, 0x44, 0x44, 0x44, 0x38}, // o
-    {0x7C, 0x14, 0x14, 0x14, 0x08}, // p
-    {0x08, 0x14, 0x14, 0x18, 0x7C}, // q
-    {0x7C, 0x08, 0x04, 0x04, 0x08}, // r
-    {0x48, 0x54, 0x54, 0x54, 0x20}, // s
-    {0x04, 0x3F, 0x44, 0x40, 0x20}, // t
-    {0x3C, 0x40, 0x40, 0x20, 0x7C}, // u
-    {0x1C, 0x20, 0x40, 0x20, 0x1C}, // v
-    {0x3C, 0x40, 0x30, 0x40, 0x3C}, // w
-    {0x44, 0x28, 0x10, 0x28, 0x44}, // x
-    {0x0C, 0x50, 0x50, 0x50, 0x3C}, // y
-    {0x44, 0x64, 0x54, 0x4C, 0x44}, // z
 };
 
-// ==================== I2C Funktionen ====================
-
-void delay_i2c(void) {
-    __delay_cycles(50);
-}
+// ==================== I2C ====================
 
 void i2c_start(void) {
-    SDA_OUT;
-    SDA_HIGH;
-    SCL_HIGH;
-    delay_i2c();
-    SDA_LOW;
-    delay_i2c();
-    SCL_LOW;
+    SDA_OUT; SDA_HIGH; SCL_HIGH;
+    __delay_cycles(50);
+    SDA_LOW; __delay_cycles(50); SCL_LOW;
 }
 
 void i2c_stop(void) {
-    SDA_OUT;
-    SDA_LOW;
-    delay_i2c();
-    SCL_HIGH;
-    delay_i2c();
-    SDA_HIGH;
-    delay_i2c();
+    SDA_OUT; SDA_LOW; __delay_cycles(50);
+    SCL_HIGH; __delay_cycles(50); SDA_HIGH;
 }
 
-void i2c_write_byte(uint8_t data) {
+void i2c_write(uint8_t d) {
     uint8_t i;
     SDA_OUT;
-    
     for (i = 0; i < 8; i++) {
-        if (data & 0x80) {
-            SDA_HIGH;
-        } else {
-            SDA_LOW;
-        }
-        delay_i2c();
-        SCL_HIGH;
-        delay_i2c();
-        SCL_LOW;
-        data <<= 1;
+        if (d & 0x80) SDA_HIGH; else SDA_LOW;
+        __delay_cycles(50); SCL_HIGH;
+        __delay_cycles(50); SCL_LOW;
+        d <<= 1;
     }
-    
-    SDA_IN;
-    delay_i2c();
-    SCL_HIGH;
-    delay_i2c();
-    SCL_LOW;
-    SDA_OUT;
+    SDA_IN; __delay_cycles(50);
+    SCL_HIGH; __delay_cycles(50); SCL_LOW; SDA_OUT;
 }
 
-uint8_t i2c_read_byte(uint8_t ack) {
-    uint8_t i, data = 0;
-    
+uint8_t i2c_read(uint8_t ack) {
+    uint8_t i, d = 0;
     SDA_IN;
-    
     for (i = 0; i < 8; i++) {
-        data <<= 1;
-        SCL_HIGH;
-        delay_i2c();
-        if (SDA_READ) {
-            data |= 1;
-        }
-        SCL_LOW;
-        delay_i2c();
+        d <<= 1; SCL_HIGH; __delay_cycles(50);
+        if (SDA_READ) d |= 1;
+        SCL_LOW; __delay_cycles(50);
     }
-    
     SDA_OUT;
-    if (ack) {
-        SDA_LOW;
-    } else {
-        SDA_HIGH;
-    }
-    delay_i2c();
-    SCL_HIGH;
-    delay_i2c();
-    SCL_LOW;
-    SDA_LOW;
-    
-    return data;
+    if (ack) SDA_LOW; else SDA_HIGH;
+    __delay_cycles(50); SCL_HIGH;
+    __delay_cycles(50); SCL_LOW; SDA_LOW;
+    return d;
 }
 
-// ==================== OLED Funktionen ====================
+// ==================== OLED ====================
 
-void oled_cmd(uint8_t cmd) {
+void oled_cmd(uint8_t c) {
     i2c_start();
-    i2c_write_byte(OLED_ADDR << 1);
-    i2c_write_byte(0x00);
-    i2c_write_byte(cmd);
+    i2c_write(OLED_ADDR << 1);
+    i2c_write(0x00);
+    i2c_write(c);
     i2c_stop();
 }
 
-void oled_data(uint8_t data) {
+void oled_data(uint8_t d) {
     i2c_start();
-    i2c_write_byte(OLED_ADDR << 1);
-    i2c_write_byte(0x40);
-    i2c_write_byte(data);
+    i2c_write(OLED_ADDR << 1);
+    i2c_write(0x40);
+    i2c_write(d);
     i2c_stop();
 }
 
 void oled_init(void) {
     __delay_cycles(100000);
     oled_cmd(0xAE);
-    oled_cmd(0xD5);
-    oled_cmd(0x80);
-    oled_cmd(0xA8);
-    oled_cmd(0x3F);
-    oled_cmd(0xD3);
-    oled_cmd(0x00);
+    oled_cmd(0xD5); oled_cmd(0x80);
+    oled_cmd(0xA8); oled_cmd(0x3F);
+    oled_cmd(0xD3); oled_cmd(0x00);
     oled_cmd(0x40);
-    oled_cmd(0x8D);
-    oled_cmd(0x14);
-    oled_cmd(0x20);
-    oled_cmd(0x00);
-    oled_cmd(0xA1);
-    oled_cmd(0xC8);
-    oled_cmd(0xDA);
-    oled_cmd(0x12);
-    oled_cmd(0x81);
-    oled_cmd(0xCF);
-    oled_cmd(0xD9);
-    oled_cmd(0xF1);
-    oled_cmd(0xDB);
-    oled_cmd(0x40);
-    oled_cmd(0xA4);
-    oled_cmd(0xA6);
+    oled_cmd(0x8D); oled_cmd(0x14);
+    oled_cmd(0x20); oled_cmd(0x00);
+    oled_cmd(0xA1); oled_cmd(0xC8);
+    oled_cmd(0xDA); oled_cmd(0x12);
+    oled_cmd(0x81); oled_cmd(0xFF);
+    oled_cmd(0xD9); oled_cmd(0xF1);
+    oled_cmd(0xDB); oled_cmd(0x40);
+    oled_cmd(0xA4); oled_cmd(0xA6);
     oled_cmd(0xAF);
 }
 
 void oled_clear(void) {
     uint16_t i;
-    oled_cmd(0x21);
-    oled_cmd(0);
-    oled_cmd(127);
-    oled_cmd(0x22);
-    oled_cmd(0);
-    oled_cmd(7);
-    for (i = 0; i < 1024; i++) {
-        oled_data(0x00);
-    }
+    oled_cmd(0x21); oled_cmd(0); oled_cmd(127);
+    oled_cmd(0x22); oled_cmd(0); oled_cmd(7);
+    for (i = 0; i < 1024; i++) oled_data(0x00);
 }
 
-void oled_set_cursor(uint8_t x, uint8_t page) {
-    oled_cmd(0x21);
-    oled_cmd(x);
-    oled_cmd(127);
-    oled_cmd(0x22);
-    oled_cmd(page);
-    oled_cmd(7);
+void oled_pos(uint8_t x, uint8_t p) {
+    oled_cmd(0x21); oled_cmd(x); oled_cmd(127);
+    oled_cmd(0x22); oled_cmd(p); oled_cmd(7);
 }
 
-void oled_putchar(char c) {
+void oled_char(char c) {
     uint8_t i, idx;
-    
-    if (c < 32 || c > 122) {
-        idx = 0;
-    } else {
-        idx = c - 32;
-    }
-    
-    for (i = 0; i < 5; i++) {
-        oled_data(font[idx][i]);
-    }
+    if (c >= 'a' && c <= 'z') c -= 32;
+    if (c < 32 || c > 90) idx = 0;
+    else idx = c - 32;
+    for (i = 0; i < 5; i++) oled_data(font[idx][i]);
     oled_data(0x00);
 }
 
-void oled_print(const char *str) {
-    while (*str) {
-        oled_putchar(*str++);
-    }
+void oled_str(const char *s) {
+    while (*s) oled_char(*s++);
 }
 
-void oled_print_int(int32_t val) {
-    char buf[12];
+void oled_int(int32_t v) {
+    char b[8];
     int8_t i = 0;
-    uint8_t neg = 0;
-    
-    if (val < 0) {
-        neg = 1;
-        val = -val;
+    uint8_t n = 0;
+    if (v < 0) { n = 1; v = -v; }
+    if (v == 0) { oled_char('0'); return; }
+    while (v > 0) { b[i++] = '0' + (v % 10); v /= 10; }
+    if (n) oled_char('-');
+    while (i > 0) oled_char(b[--i]);
+}
+
+void oled_bar(uint8_t x, uint8_t p, uint8_t w, uint8_t pct) {
+    uint8_t i;
+    uint8_t filled = (uint8_t)(((uint16_t)(w - 2) * pct) / 100);
+    oled_pos(x, p);
+    oled_data(0x7F);
+    for (i = 0; i < w - 2; i++) {
+        if (i < filled) oled_data(0x7F);
+        else oled_data(0x55);
     }
-    
-    if (val == 0) {
-        oled_putchar('0');
-        return;
-    }
-    
-    while (val > 0) {
-        buf[i++] = '0' + (val % 10);
-        val /= 10;
-    }
-    
-    if (neg) {
-        oled_putchar('-');
-    }
-    
-    while (i > 0) {
-        oled_putchar(buf[--i]);
+    oled_data(0x7F);
+}
+
+void oled_ok(uint8_t x, uint8_t p) {
+    oled_pos(x, p);
+    oled_data(0x00);
+    oled_data(0x10);
+    oled_data(0x20);
+    oled_data(0x40);
+    oled_data(0x20);
+    oled_data(0x10);
+    oled_data(0x08);
+    oled_data(0x04);
+}
+
+void oled_bad(uint8_t x, uint8_t p) {
+    oled_pos(x, p);
+    oled_data(0x00);
+    oled_data(0x63);
+    oled_data(0x36);
+    oled_data(0x1C);
+    oled_data(0x1C);
+    oled_data(0x36);
+    oled_data(0x63);
+    oled_data(0x00);
+}
+
+// 3 Punkte Animation
+void oled_dots(uint8_t x, uint8_t p, uint8_t count) {
+    uint8_t i;
+    oled_pos(x, p);
+    for (i = 0; i < 3; i++) {
+        if (i < count) {
+            oled_data(0x00);
+            oled_data(0x3C);
+            oled_data(0x7E);
+            oled_data(0x7E);
+            oled_data(0x3C);
+            oled_data(0x00);
+            oled_data(0x00);
+        } else {
+            oled_data(0x00);
+            oled_data(0x00);
+            oled_data(0x00);
+            oled_data(0x00);
+            oled_data(0x00);
+            oled_data(0x00);
+            oled_data(0x00);
+        }
     }
 }
 
-void oled_print_temp(int16_t temp_x100) {
-    int16_t whole, frac;
-    
-    if (temp_x100 < 0) {
-        oled_putchar('-');
-        temp_x100 = -temp_x100;
-    }
-    
-    whole = temp_x100 / 100;
-    frac = temp_x100 % 100;
-    
-    oled_print_int(whole);
-    oled_putchar('.');
-    if (frac < 10) {
-        oled_putchar('0');
-    }
-    oled_print_int(frac);
-}
+// ==================== Sensoren ====================
 
-void oled_print_hex(uint16_t val) {
-    char hex[] = "0123456789ABCDEF";
-    oled_putchar('0');
-    oled_putchar('x');
-    oled_putchar(hex[(val >> 12) & 0xF]);
-    oled_putchar(hex[(val >> 8) & 0xF]);
-    oled_putchar(hex[(val >> 4) & 0xF]);
-    oled_putchar(hex[val & 0xF]);
-}
-
-// ==================== TMP1075 Funktionen ====================
-
-int16_t tmp1075_read_temp(void) {
-    uint8_t msb, lsb;
-    int16_t raw_temp;
-    int32_t temp_x100;
-    
-    i2c_start();
-    i2c_write_byte(TMP1075_ADDR << 1);
-    i2c_write_byte(0x00);
-    i2c_stop();
-    
+int16_t read_temp(void) {
+    uint8_t m, l;
+    int16_t r;
+    i2c_start(); i2c_write(TMP1075_ADDR << 1); i2c_write(0x00); i2c_stop();
     __delay_cycles(5000);
-    
-    i2c_start();
-    i2c_write_byte((TMP1075_ADDR << 1) | 1);
-    msb = i2c_read_byte(1);
-    lsb = i2c_read_byte(0);
-    i2c_stop();
-    
-    raw_temp = ((int16_t)msb << 4) | (lsb >> 4);
-    
-    if (raw_temp & 0x800) {
-        raw_temp |= 0xF000;
-    }
-    
-    temp_x100 = ((int32_t)raw_temp * 625) / 100;
-    
-    return (int16_t)temp_x100;
+    i2c_start(); i2c_write((TMP1075_ADDR << 1) | 1);
+    m = i2c_read(1); l = i2c_read(0); i2c_stop();
+    r = ((int16_t)m << 4) | (l >> 4);
+    if (r & 0x800) r |= 0xF000;
+    return (int16_t)(((int32_t)r * 625) / 100);
 }
 
-// ==================== FDC1004 Funktionen ====================
+void fdc_wreg(uint8_t r, uint16_t v) {
+    i2c_start(); i2c_write(FDC1004_ADDR << 1);
+    i2c_write(r); i2c_write(v >> 8); i2c_write(v & 0xFF);
+    i2c_stop(); __delay_cycles(5000);
+}
 
-void fdc1004_write_reg(uint8_t reg, uint16_t value) {
-    i2c_start();
-    i2c_write_byte(FDC1004_ADDR << 1);
-    i2c_write_byte(reg);
-    i2c_write_byte(value >> 8);
-    i2c_write_byte(value & 0xFF);
-    i2c_stop();
+uint16_t fdc_rreg(uint8_t r) {
+    uint8_t m, l;
+    i2c_start(); i2c_write(FDC1004_ADDR << 1); i2c_write(r); i2c_stop();
     __delay_cycles(5000);
+    i2c_start(); i2c_write((FDC1004_ADDR << 1) | 1);
+    m = i2c_read(1); l = i2c_read(0); i2c_stop();
+    return ((uint16_t)m << 8) | l;
 }
 
-uint16_t fdc1004_read_reg(uint8_t reg) {
-    uint8_t msb, lsb;
-    
-    i2c_start();
-    i2c_write_byte(FDC1004_ADDR << 1);
-    i2c_write_byte(reg);
-    i2c_stop();
-    
-    __delay_cycles(5000);
-    
-    i2c_start();
-    i2c_write_byte((FDC1004_ADDR << 1) | 1);
-    msb = i2c_read_byte(1);
-    lsb = i2c_read_byte(0);
-    i2c_stop();
-    
-    return ((uint16_t)msb << 8) | lsb;
-}
-
-uint16_t fdc1004_read_id(void) {
-    return fdc1004_read_reg(0xFF);
-}
-
-void fdc1004_init(void) {
-    fdc1004_write_reg(0x0C, 0x8000);
+void fdc_init(void) {
+    fdc_wreg(0x0C, 0x8000);
     __delay_cycles(100000);
-    fdc1004_write_reg(0x08, 0x1C00);
+    fdc_wreg(0x08, 0x1C00);
 }
 
-int32_t fdc1004_read_capacitance(void) {
-    uint16_t meas_msb, meas_lsb;
-    uint16_t fdc_conf;
-    int32_t raw;
-    uint16_t timeout;
-    
-    fdc1004_write_reg(0x0C, 0x0480);
-    
-    timeout = 500;
-    do {
-        __delay_cycles(20000);
-        fdc_conf = fdc1004_read_reg(0x0C);
-        timeout--;
-    } while (!(fdc_conf & 0x0008) && (timeout > 0));
-    
-    if (timeout == 0) {
-        return -9999;
-    }
-    
-    meas_msb = fdc1004_read_reg(0x00);
-    meas_lsb = fdc1004_read_reg(0x01);
-    
-    raw = ((int32_t)meas_msb << 8) | (meas_lsb >> 8);
-    
-    if (raw & 0x800000) {
-        raw |= 0xFF000000;
-    }
-    
-    return raw / 524;
+int32_t read_cap(void) {
+    uint16_t m, l, c;
+    int32_t r;
+    uint16_t t = 500;
+    fdc_wreg(0x0C, 0x0480);
+    do { __delay_cycles(20000); c = fdc_rreg(0x0C); t--; }
+    while (!(c & 0x0008) && t > 0);
+    if (t == 0) return -9999;
+    m = fdc_rreg(0x00); l = fdc_rreg(0x01);
+    r = ((int32_t)m << 8) | (l >> 8);
+    if (r & 0x800000) r |= 0xFF000000;
+    return r / 524;
 }
 
-// ==================== OPT3001 Funktionen ====================
+void opt_wreg(uint8_t r, uint16_t v) {
+    i2c_start(); i2c_write(OPT3001_ADDR << 1);
+    i2c_write(r); i2c_write(v >> 8); i2c_write(v & 0xFF);
+    i2c_stop(); __delay_cycles(5000);
+}
 
-void opt3001_write_reg(uint8_t reg, uint16_t value) {
-    i2c_start();
-    i2c_write_byte(OPT3001_ADDR << 1);
-    i2c_write_byte(reg);
-    i2c_write_byte(value >> 8);
-    i2c_write_byte(value & 0xFF);
-    i2c_stop();
+uint16_t opt_rreg(uint8_t r) {
+    uint8_t m, l;
+    i2c_start(); i2c_write(OPT3001_ADDR << 1); i2c_write(r); i2c_stop();
     __delay_cycles(5000);
+    i2c_start(); i2c_write((OPT3001_ADDR << 1) | 1);
+    m = i2c_read(1); l = i2c_read(0); i2c_stop();
+    return ((uint16_t)m << 8) | l;
 }
 
-uint16_t opt3001_read_reg(uint8_t reg) {
-    uint8_t msb, lsb;
-    
-    i2c_start();
-    i2c_write_byte(OPT3001_ADDR << 1);
-    i2c_write_byte(reg);
-    i2c_stop();
-    
-    __delay_cycles(5000);
-    
-    i2c_start();
-    i2c_write_byte((OPT3001_ADDR << 1) | 1);
-    msb = i2c_read_byte(1);
-    lsb = i2c_read_byte(0);
-    i2c_stop();
-    
-    return ((uint16_t)msb << 8) | lsb;
-}
-
-uint16_t opt3001_read_device_id(void) {
-    return opt3001_read_reg(OPT3001_REG_DEV_ID);
-}
-
-uint16_t opt3001_read_manufacturer_id(void) {
-    return opt3001_read_reg(OPT3001_REG_MANU_ID);
-}
-
-void opt3001_init(void) {
-    // Config: Auto-range, 100ms, continuous mode
-    // 0xC410 = Auto-scale, 100ms conversion, continuous
-    opt3001_write_reg(OPT3001_REG_CONFIG, 0xC410);
+void opt_init(void) {
+    opt_wreg(0x01, 0xC410);
     __delay_cycles(150000);
 }
 
-int32_t opt3001_read_lux(void) {
-    uint16_t raw;
-    uint16_t mantissa;
-    uint8_t exponent;
-    int32_t lux_x100;
-    
-    raw = opt3001_read_reg(OPT3001_REG_RESULT);
-    
-    // Bits 15:12 = Exponent, Bits 11:0 = Mantissa
-    // Lux = 0.01 * 2^E * R
-    exponent = (raw >> 12) & 0x0F;
-    mantissa = raw & 0x0FFF;
-    
-    lux_x100 = (int32_t)mantissa << exponent;
-    
-    return lux_x100;
+int32_t read_lux(void) {
+    uint16_t r = opt_rreg(0x00);
+    return (int32_t)(r & 0x0FFF) << ((r >> 12) & 0x0F);
 }
 
-// ==================== Feuchtigkeit ====================
-
-int16_t cap_to_humidity(int32_t cap_pf) {
-    int32_t humidity;
-    
-    humidity = RH_DRY + ((cap_pf - CAP_DRY) * (RH_WET - RH_DRY)) / (CAP_WET - CAP_DRY);
-    
-    if (humidity < 0) humidity = 0;
-    if (humidity > 100) humidity = 100;
-    
-    return (int16_t)humidity;
+int16_t cap_to_hum(int32_t c) {
+    int32_t h = RH_DRY + ((c - CAP_DRY) * (RH_WET - RH_DRY)) / (CAP_WET - CAP_DRY);
+    if (h < 0) h = 0;
+    if (h > 100) h = 100;
+    return (int16_t)h;
 }
 
 // ==================== Main ====================
 
 int main(void) {
-    int16_t temperature;
-    int32_t capacitance;
-    int16_t humidity;
-    int32_t lux;
-    uint16_t fdc_id, opt_id;
-    int32_t cap_sum = 0;
-    uint8_t cap_count = 0;
-    int32_t cap_avg = 0;
+    int16_t temp, hum;
+    int32_t cap, lux;
+    int16_t tc, lv;
+    int32_t cs = 0;
+    uint8_t cc = 0;
+    int32_t ca = -4500;
+    uint8_t hr = 0, i, dot;
     
     WDTCTL = WDTPW | WDTHOLD;
-    
     P1SEL0 &= ~(SDA | SCL);
     P1SEL1 &= ~(SDA | SCL);
     P1DIR |= SDA | SCL;
     P1OUT |= SDA | SCL;
-    
     PM5CTL0 &= ~LOCKLPM5;
     
     __delay_cycles(500000);
-    
     oled_init();
     oled_clear();
     
-    // ===== Sensor Check =====
-    oled_set_cursor(0, 0);
-    oled_print("Sensor Check");
+    // ========== STARTUP ==========
     
-    oled_set_cursor(0, 2);
-    oled_print("FDC: ");
-    fdc_id = fdc1004_read_id();
-    oled_print_hex(fdc_id);
-    oled_print(fdc_id == 0x1004 ? " OK" : " ERR");
+    oled_pos(10, 2);
+    oled_str("PLANT SENSOR");
     
-    oled_set_cursor(0, 4);
-    oled_print("OPT: ");
-    opt_id = opt3001_read_device_id();
-    oled_print_hex(opt_id);
-    oled_print(opt_id == 0x3001 ? " OK" : " ERR");
+    oled_pos(28, 5);
+    oled_str("STARTING");
     
-    __delay_cycles(3000000);
+    // 3 Punkte Animation
+    dot = 0;
+    for (i = 0; i < 18; i++) {
+        oled_dots(80, 5, dot + 1);
+        dot = (dot + 1) % 3;
+        
+        if (i == 5) fdc_init();
+        if (i == 10) opt_init();
+        
+        __delay_cycles(200000);
+    }
     
-    fdc1004_init();
-    opt3001_init();
+    // Calibrating
+    oled_pos(28, 5);
+    oled_str("CALIBRATE");
+    
+    dot = 0;
+    for (i = 0; i < 12; i++) {
+        oled_dots(82, 5, dot + 1);
+        dot = (dot + 1) % 3;
+        
+        cap = read_cap();
+        if (cap != -9999) { cs += cap; cc++; }
+        
+        __delay_cycles(150000);
+    }
+    if (cc > 0) { ca = cs / cc; hr = 1; }
+    cs = 0; cc = 0;
+    
+    // Ready
+    oled_pos(28, 5);
+    oled_str("   READY!    ");
+    __delay_cycles(800000);
     
     oled_clear();
     
-    // ===== Hauptschleife =====
+    // ========== MAIN LOOP ==========
+    
     while (1) {
-        temperature = tmp1075_read_temp();
-        capacitance = fdc1004_read_capacitance();
-        lux = opt3001_read_lux();
+        temp = read_temp();
+        cap = read_cap();
+        lux = read_lux();
         
-        if (capacitance != -9999) {
-            cap_sum += capacitance;
-            cap_count++;
-            if (cap_count >= AVG_SAMPLES) {
-                cap_avg = cap_sum / AVG_SAMPLES;
-                cap_sum = 0;
-                cap_count = 0;
+        if (cap != -9999) {
+            cs += cap;
+            cc++;
+            if (cc >= AVG_SAMPLES) {
+                ca = cs / AVG_SAMPLES;
+                cs = 0; cc = 0; hr = 1;
             }
         }
-        humidity = cap_to_humidity(cap_avg);
+        hum = cap_to_hum(ca);
+        tc = temp / 100;
+        lv = lux / 100;
         
-        // Zeile 0: Temperatur
-        oled_set_cursor(0, 0);
-        oled_print("Temp: ");
-        oled_print_temp(temperature);
-        oled_print(" C    ");
+        // ===== TEMPERATURE (Page 0) =====
+        oled_pos(0, 0);
+        oled_str("TEMP     ");
+        oled_int(tc);
+        oled_char('.');
+        oled_int((temp < 0 ? -temp : temp) % 100 / 10);
+        oled_str(" C   ");
+        if (tc >= TEMP_MIN && tc <= TEMP_MAX) oled_ok(118, 0);
+        else oled_bad(118, 0);
         
-        // Zeile 2: Feuchtigkeit
-        oled_set_cursor(0, 2);
-        oled_print("Hum:  ");
-        oled_print_int(humidity);
-        oled_print(" %    ");
+        // ===== HUMIDITY (Page 2, Bar auf Page 4) =====
+        oled_pos(0, 2);
+        oled_str("HUMIDITY ");
+        if (hr) {
+            oled_int(hum);
+            oled_str(" %   ");
+        } else {
+            oled_str("---   ");
+        }
+        if (hr && hum >= HUM_MIN && hum <= HUM_MAX) oled_ok(118, 2);
+        else if (hr) oled_bad(118, 2);
         
-        // Zeile 4: Licht (Lux)
-        oled_set_cursor(0, 4);
-        oled_print("Lux:  ");
-        oled_print_int(lux / 100);
-        oled_putchar('.');
-        if ((lux % 100) < 10) oled_putchar('0');
-        oled_print_int(lux % 100);
-        oled_print("      ");
+        if (hr) oled_bar(0, 3, 110, hum);
         
-        // Zeile 6: Kapazität (Debug)
-        oled_set_cursor(0, 6);
-        oled_print("Cap: ");
-        oled_print_int(cap_avg);
-        oled_print(" pF    ");
+        // ===== LIGHT (Page 5, Bar auf Page 7) =====
+        oled_pos(0, 5);
+        oled_str("LIGHT    ");
+        oled_int(lv);
+        oled_str(" LX   ");
+        if (lv >= LUX_MIN) oled_ok(118, 5);
+        else oled_bad(118, 5);
         
-        __delay_cycles(200000);
+        oled_bar(0, 6, 110, (lv > 10000 ? 100 : lv / 100));
+        __delay_cycles(300000);
     }
 }
